@@ -95,6 +95,40 @@ function environmentBinding(source: string, name: string): string | null {
   return match ? match.slice(match.indexOf(":") + 1).trim() : null;
 }
 
+/**
+ * The expression a `--resource-group` argument ultimately resolves to.
+ *
+ * Two shapes are legitimate. The argument either carries the expression
+ * directly, or it reads a shell variable that an `env:` entry bound to the
+ * expression — which is how `delete-environment-azure.yml` keeps
+ * environment-controlled values out of its shell source.
+ *
+ * Following the indirection is what makes this answer the question being
+ * asked. Reading the argument line alone would see `"$AZURE_AKS_RESOURCE_GROUP"`
+ * and stop, without ever learning which group that name was bound to.
+ *
+ * Resolution deliberately starts from the argument rather than from the file,
+ * so an `env:` binding belonging to some other step is not mistaken for part of
+ * the cluster lookup. Hardening an unrelated step the same way is a change this
+ * test has no business failing.
+ *
+ * `null` means the shape was not recognised, which the callers treat as a
+ * failure rather than a pass: an argument this cannot read is one it cannot
+ * vouch for.
+ */
+function resolvedResourceGroup(
+  source: string,
+  argument: string
+): string | null {
+  const interpolated = /--resource-group\s+"(\$\{\{.*?\}\})"/.exec(argument);
+  if (interpolated) return interpolated[1];
+  const shellVariable = /--resource-group\s+"\$([A-Za-z_][A-Za-z0-9_]*)"/.exec(
+    argument
+  );
+  if (shellVariable) return environmentBinding(source, shellVariable[1]);
+  return null;
+}
+
 describe("the generated Azure workflows' AKS cluster lookup", () => {
   // Guards the discovery itself: a rename that emptied this list would leave
   // every assertion below vacuously true.
@@ -113,31 +147,25 @@ describe("the generated Azure workflows' AKS cluster lookup", () => {
       const args = resourceGroupArguments(source);
       expect(args.length).toBeGreaterThan(0);
       for (const argument of args) {
-        // Either the expression is on the command, or the command reads a
-        // shell variable that an `env:` entry bound to it. The second shape is
-        // deliberate in the delete-environment workflow, which keeps
-        // environment-controlled values out of its shell source.
-        const interpolated = argument.includes(CLUSTER_RESOURCE_GROUP);
-        const indirect =
-          argument.includes('"$AZURE_AKS_RESOURCE_GROUP"') &&
-          environmentBinding(source, "AZURE_AKS_RESOURCE_GROUP") ===
-            CLUSTER_RESOURCE_GROUP;
-        expect(interpolated || indirect).toBe(true);
+        expect(resolvedResourceGroup(source, argument)).toBe(
+          CLUSTER_RESOURCE_GROUP
+        );
       }
     }
   );
 
   // The failure this pins is the tempting one: reading the application's group
-  // directly looks correct and works everywhere it is currently tested.
+  // directly looks correct and works everywhere it is currently tested. Named
+  // separately from the assertion above, which it follows from, so the most
+  // likely regression reports itself rather than as an expression mismatch.
   it.each(clusterWorkflows)(
     "%s never resolves the cluster from the application's resource group alone",
     (_name, source) => {
       for (const argument of resourceGroupArguments(source)) {
-        expect(argument).not.toContain(
-          `--resource-group "${APPLICATION_RESOURCE_GROUP}"`
+        expect(resolvedResourceGroup(source, argument)).not.toBe(
+          APPLICATION_RESOURCE_GROUP
         );
       }
-      expect(environmentBinding(source, "AZURE_RESOURCE_GROUP")).toBeNull();
     }
   );
 });
