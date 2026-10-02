@@ -901,20 +901,27 @@ describe("P0-C built Radius extension artifact", () => {
       /ORDER_QUEUE_USERNAME:\s*\{\s*value:\s*rabbitmq\.properties\.username\b/u
     );
     expect(rabbitmqExample?.match(/'myadmin'/gu)).toHaveLength(1);
-    expect(rabbitmqExample).toMatch(
-      /ORDER_QUEUE_PASSWORD:\s*\{\s*valueFrom:\s*\{\s*secretKeyRef:\s*\{\s*secretName:\s*rabbitmqCredentials\.name\s+key:\s*'password'/u
-    );
     // A username set by Compose and read from an environment variable is the
     // case that looked like a requirement; the rule table pins it to myadmin.
     expect(secretsGuidance).toMatch(
       /\|\s*`process\.env\.ORDER_QUEUE_USERNAME`, which Compose sets to `username`\s*\|\s*2\s*\|\s*`myadmin`; set `ORDER_QUEUE_USERNAME`\s*\|/u
     );
-    expect(secretsGuidance).not.toMatch(/\|\s*4\s*\|/u);
     // A cloud database admin login can't be renamed, so a refresh must keep
     // the username the existing model set.
     expect(secretsGuidance).toContain(
       "**When refreshing a model, keep the username it already has.**"
     );
+    expect(secretsGuidance).toContain(
+      "If the user asks to change it, keep the existing value, tell them the change may require replacing the service, and change it only after they confirm."
+    );
+    expect(secretsGuidance).not.toContain("unless the user asks to change it");
+    // Every one-source form the rule allows must pass the checklists, or a
+    // valid model would be rejected.
+    for (const guidance of [secretsGuidance, skillGuidance]) {
+      expect(guidance).toContain(
+        "`<resource>.properties.username`, the generated `CONNECTION_<CONNECTION>_USERNAME`, one shared `var`, or the schema's authored Secret through `secretKeyRef`"
+      );
+    }
     expect(skillGuidance).toContain(
       "Keep every provisioned service username the existing model sets."
     );
@@ -923,6 +930,14 @@ describe("P0-C built Radius extension artifact", () => {
     );
     expect(secretsGuidance).toMatch(
       /\|\s*`amqp\.connect\('amqp:\/\/guest:guest@' \+ host\)`\s*\|\s*3\s*\|\s*stop and report/u
+    );
+    // A fixed literal on one consumer decides the resource's username, and a
+    // conflicting request or second literal stops the run.
+    expect(secretsGuidance).toContain(
+      "Stop and report the conflict when two consumers fix different literals, or when the user asks for a username that differs from a fixed literal."
+    );
+    expect(secretsGuidance).toContain(
+      "If a consumer cannot read that Secret, for example because its username is a fixed literal, stop and report it."
     );
     // A shared username var must land in the same place with the same name
     // on every regeneration.
@@ -1061,14 +1076,18 @@ describe("P0-C built Radius extension artifact", () => {
     );
     expect(rabbitmqExample).not.toMatch(/^\s*PASSWORD:/mu);
 
-    const rabbitmqConsumer = bicepBlocks.find(
+    const rabbitmqConsumers = bicepBlocks.filter(
       (block) =>
         block.includes("secretName: rabbitmqCredentials.name") &&
         block.includes("secretKeyRef")
     );
-    expect(rabbitmqConsumer).toBeDefined();
-    expect(rabbitmqConsumer).toMatch(/key:\s*'password'/u);
-    expect(rabbitmqConsumer).not.toMatch(/key:\s*'PASSWORD'/u);
+    // The broker example and the standalone consumer snippet both read this
+    // Secret, so every reader is checked rather than the first one found.
+    expect(rabbitmqConsumers.length).toBeGreaterThanOrEqual(2);
+    for (const consumer of rabbitmqConsumers) {
+      expect(consumer).toMatch(/key:\s*'password'/u);
+      expect(consumer).not.toMatch(/key:\s*'PASSWORD'/u);
+    }
   });
 
   it("packages the staged type-sensitivity contract both credential scripts share", () => {
