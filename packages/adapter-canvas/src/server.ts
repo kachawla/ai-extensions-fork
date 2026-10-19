@@ -141,8 +141,10 @@ import {
   resolveSessionId,
   toSafeRepoRelPath,
   uncommittedGeneratedPaths,
-  workspaceGraphJsonPath
+  workspaceGraphJsonPath,
+  workspaceSourceRevision
 } from "./workspace.js";
+import { readSelectedSourceRevision } from "./app-model-authoring-failure.js";
 import {
   DEFAULT_CANVAS_PAGE,
   DEPLOY_REPAIR_ATTEMPT_CAP
@@ -546,6 +548,7 @@ interface AppBicepHandoffInput {
   // Whether the render that raised this handoff is still on screen, re-checked
   // by the runtime just before it mints attempt tokens and speaks.
   isCurrent?: () => boolean;
+  environmentKey?: string;
 }
 
 export interface DeployRepairHandoffInput {
@@ -1293,7 +1296,7 @@ async function ensureWorkflowsCurrent(
 // agent to run the radius-app-bicep skill. This is what makes branch/repo
 // selection (not just canvas open) trigger generation automatically.
 let appBicepHandoff: AppBicepHandoff | null = null;
-export function setAppBicepHandoff(fn: AppBicepHandoff): void {
+export function setAppBicepHandoff(fn: AppBicepHandoff | null): void {
   appBicepHandoff = fn;
 }
 
@@ -1463,7 +1466,8 @@ function triggerAppBicepHandoff(
   branches: string | string[],
   page: string,
   progressView: GraphProgressView = page === "graph-diff" ? "diff" : "graph",
-  isCurrent?: () => boolean
+  isCurrent?: () => boolean,
+  environmentKey?: string
 ): void {
   try {
     if (typeof appBicepHandoff !== "function") return;
@@ -1478,7 +1482,8 @@ function triggerAppBicepHandoff(
         page,
         progressView,
         state: entry?.state,
-        isCurrent
+        isCurrent,
+        environmentKey
       })
     ).catch(() => {});
   } catch {
@@ -6444,6 +6449,12 @@ export function createProductionCanvasServerRuntime(
       computeGraphDiff: (baseResources, headResources) =>
         computeGraphDiff(baseResources, headResources),
       observeModelingRun: observeServerWorkspaceModelingRun,
+      readBranchSourceRevision: (entry, repo, branch) =>
+        readSelectedSourceRevision(entry.state, repo, branch, {
+          isWorkspaceSelection,
+          workspaceSourceRevision,
+          branchHeadCommit: getBranchHeadSha
+        }),
       record,
       optionalString,
       errorMessage,
