@@ -716,6 +716,7 @@ jobs:
           failures=()
           delete_log="$RUNNER_TEMP/group-cleanup-delete.log"
           while IFS=$'\t' read -r id name type; do
+            type="${type%$'\r'}"
             [[ -n "$id" ]] || continue
             delete_status=0
             az resource delete --ids "$id" --verbose 2>"$delete_log" || delete_status=$?
