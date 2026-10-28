@@ -59,12 +59,7 @@ The last three rows are close matches. The first rows are where AWS differs: the
 
 ## Problem
 
-This example is used through the rest of the doc. The repository `contoso/storefront` has an app with a container and a MySQL database. The team wants two environments in AWS account `111122223333`:
-
-| GitHub environment | Region      | EKS cluster       |
-|--------------------|-------------|-------------------|
-| `dev`              | `us-west-2` | `storefront-dev`  |
-| `prod`             | `us-east-1` | `storefront-prod` |
+This example is used through the rest of the doc. The repository `contoso/storefront` has an app with a container and a MySQL database. The team wants two environments in AWS account `111122223333`: `dev` in `us-west-2` on the EKS cluster `storefront-dev`, and `prod` in `us-east-1` on `storefront-prod`.
 
 Both environments use one deploy identity, `radius-deploy-contoso-storefront`, the same way both Azure environments would use one app registration. Its trust policy lists both subjects:
 
@@ -158,12 +153,10 @@ A deploy assumes the deploy identity, refreshes its tokens in the background, an
 
 A credential profile holds an AWS account ID and a region, and no role. **Verify Credentials** runs `aws sts get-caller-identity` on the developer's machine:
 
-| CLI state                          | What the developer sees                                                                                             |
-|------------------------------------|---------------------------------------------------------------------------------------------------------------------|
-| Signed in to the profile's account | Verified. Save is enabled                                                                                           |
-| Signed in to a different account   | Verification fails and Save stays blocked, naming both accounts                                                     |
-| No session                         | **Sign in to AWS CLI**, which runs `aws sso login`                                                                  |
-| CLI missing, or older than 2.15.3  | Stops, naming the installed and required versions and linking to the installer. Access entries need 2.15.3 or later |
+- **Signed in to the profile's account:** verified, and Save is enabled.
+- **Signed in to a different account:** verification fails and Save stays blocked, naming both accounts.
+- **No session:** the canvas shows **Sign in to AWS CLI**, which runs `aws sso login`.
+- **CLI missing, or older than 2.15.3:** stops, naming the installed and required versions and linking to the installer. Access entries need 2.15.3 or later.
 
 The profile stores no secrets. Deleting a profile never changes anything in AWS, and environments keep working, because each environment keeps its own copy of the values.
 
@@ -175,11 +168,9 @@ The profile stores no secrets. Deleting a profile never changes anything in AWS,
 
 **How Radius knows a role is its own.** Radius tags a role it creates with `radius-managed=true` and `radius-repository=<owner>/<repo>`.
 
-| A role with the proposed name      | What setup does                                                                                                   |
-|------------------------------------|-------------------------------------------------------------------------------------------------------------------|
-| Doesn't exist                      | Creates it with both tags                                                                                         |
-| Exists, tagged for this repository | Reuses it                                                                                                         |
-| Exists without the tags            | Stops and changes nothing, because the role belongs to someone else. The developer can pick it on purpose instead |
+- **No role has the proposed name:** setup creates it with both tags.
+- **A role tagged for this repository has it:** setup reuses it.
+- **A role without the tags has it:** setup stops and changes nothing, because the role belongs to someone else. The developer can pick it on purpose instead.
 
 **Picking an existing role.** "use an existing role…" opens a picker, like Azure's application picker. It lists the IAM roles the signed-in identity can read, except AWS service-linked roles, which GitHub can't assume. Each row shows the role name and the repositories its trust policy already accepts. Roles that already trust GitHub are listed first. The picker refuses two kinds of roles:
 
@@ -213,10 +204,10 @@ Two kinds of actions are kept from the deploy identity:
 
 **Limits.** The limits are close to Azure's limit of 20 federated credentials per app registration.
 
-| Limit                                                                                        | What it allows                            | What the developer sees when it's reached                                     |
-|----------------------------------------------------------------------------------------------|-------------------------------------------|-------------------------------------------------------------------------------|
-| A role's inline policies share 10,240 characters, and each environment's policy is about 580 | About 17 environments per deploy identity | Setup stops at the permissions step, naming the limit and quoting AWS's error |
-| The trust policy allows 2,048 characters by default, and 8,192 with a quota increase         | About 30 subjects                         | Setup stops at the trust step, naming the limit and quoting AWS's error       |
+- **Inline policies:** a role's inline policies share 10,240 characters, and each environment's policy is about 580, so a deploy identity holds about 17 environments.
+- **Trust policy:** it allows 2,048 characters by default, and 8,192 with a quota increase, which is about 30 subjects.
+
+When either limit is reached, setup stops at that step, naming the limit and quoting AWS's error.
 
 ### Cluster access
 
@@ -230,12 +221,10 @@ Access entries need a cluster whose authentication mode is `API` or `API_AND_CON
 
 Discovery runs the developer's `aws` CLI with `--region` set to the profile's region.
 
-| Field       | Where the choices come from                                              | Default and rules                                                                                                                                                                              |
-|-------------|--------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| EKS cluster | `eks list-clusters`, then `describe-cluster` for each                    | Clusters in `CONFIG_MAP` mode are listed but can't be selected, and show the `aws eks update-cluster-config` command their owner runs                                                          |
-| Namespace   | The cluster's namespaces, or a typed name                                | A typed name is recorded and created on the first deploy, the same as Azure                                                                                                                    |
-| VPC         | The cluster's VPC                                                        | Always the cluster's VPC. Other VPCs aren't offered                                                                                                                                            |
-| Subnets     | `ec2 describe-subnets` and `describe-route-tables` for the cluster's VPC | Each subnet shows its availability zone, and is labeled public if its route table reaches an internet gateway. Private subnets are checked by default. Picking a public subnet shows a warning |
+- **EKS cluster:** from `eks list-clusters`, then `describe-cluster` for each. Clusters in `CONFIG_MAP` mode are listed but can't be selected, and show the `aws eks update-cluster-config` command their owner runs.
+- **Namespace:** the cluster's namespaces, or a typed name. A typed name is recorded and created on the first deploy, the same as Azure.
+- **VPC:** always the cluster's VPC. Other VPCs aren't offered.
+- **Subnets:** from `ec2 describe-subnets` and `describe-route-tables` for the cluster's VPC. Each subnet shows its availability zone, and is labeled public if its route table reaches an internet gateway. Private subnets are checked by default. Picking a public subnet shows a warning.
 
 A selection must span at least two availability zones, because RDS and other VPC-based services require it. A single-zone selection is an error on the Subnets field, and keeps **Create Environment** disabled. If the cluster's private subnets don't span two zones, the form says so and leaves Subnets empty.
 
@@ -259,18 +248,7 @@ sequenceDiagram
   GH->>AWS: Assume deploy identity, reach the cluster
 ```
 
-Setup runs in the same three stages as Azure. Every check that can't change anything runs before the first write to AWS.
-
-| Stage                     | Step                     | What happens                                                                                                                                                                   |
-|---------------------------|--------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Authorize deploy identity | Check                    | AWS CLI version, signed-in account, cluster authentication mode, and that the GitHub environment isn't already set up for Azure                                                |
-|                           | GitHub identity provider | Created if the account has none. Never deleted                                                                                                                                 |
-|                           | Deploy identity          | Created with tags, reused if tagged for this repository, or the picked role is used                                                                                            |
-|                           | Trust                    | The environment's subject is added, under the repository lock                                                                                                                  |
-|                           | Permissions              | The environment's inline policy is written                                                                                                                                     |
-|                           | Cluster access           | Access entry created, or reused if another environment on the same cluster already made it                                                                                     |
-| Configure environment     | GitHub                   | Writes `AWS_ROLE_ARN`, `AWS_REGION`, `AWS_ACCOUNT_ID`, `AWS_EKS_CLUSTER_NAME`, `RADIUS_VPC_ID`, `RADIUS_SUBNET_IDS`, and `KUBERNETES_NAMESPACE`, and commits the AWS workflows |
-| Verify credentials        | Workflow                 | Runs `verify-aws.yml`, which assumes the deploy identity from GitHub, reaches the cluster, and checks it can push to GHCR                                                      |
+Setup runs in the same three stages as Azure: **Authorize deploy identity** makes the AWS changes, **Configure environment** writes the GitHub environment variables (`AWS_ROLE_ARN`, `AWS_REGION`, `AWS_ACCOUNT_ID`, `AWS_EKS_CLUSTER_NAME`, `RADIUS_VPC_ID`, `RADIUS_SUBNET_IDS`, and `KUBERNETES_NAMESPACE`) and commits the AWS workflows, and **Verify credentials** runs `verify-aws.yml`. Verify assumes the deploy identity from GitHub, reaches the cluster, and checks it can push to GHCR. Every check that can't change anything runs before the first write to AWS.
 
 The AWS workflows are committed only when the repository creates its first AWS environment. Until then, the deploy dispatcher keeps its AWS job removed, so a repository that only uses Azure never sees AWS files.
 
@@ -313,16 +291,7 @@ Each recipe that creates a VPC-based service builds a subnet group from the envi
 
 ### App credentials
 
-On Azure, a recipe returns a key, such as a storage account key, and the app uses it. Amazon S3 and Amazon Bedrock accept only IAM credentials, which a recipe can't hand back as a key today. We'll use **EKS Pod Identity**.
-
-| Option                                | What it is                                                                     | Result                                                                                                                                                                                              |
-|---------------------------------------|--------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Long-lived access keys                | The recipe creates an IAM user and returns its key                             | Rejected. The key never expires, and copies end up in recipe state, a Kubernetes secret, and the app. The deploy identity would also need rights to create IAM users, which lets it create an admin |
-| Generic credential fields             | Add AWS fields such as `accessKeyId` to the Radius types                       | Rejected. It still needs long-lived keys, and changing the types affects Azure apps                                                                                                                 |
-| Node role                             | Grant access to the IAM role of the cluster's nodes                            | Rejected. Every pod on those nodes gets the same access, and it changes the user's cluster                                                                                                          |
-| Separate types per cloud              | AWS-only Radius types with AWS-shaped outputs                                  | Rejected. The same app definition could no longer deploy to both clouds                                                                                                                             |
-| IAM roles for service accounts (IRSA) | A role per app, trusted through the cluster's own OIDC provider                | Works, but needs an OIDC provider per cluster, and each role's trust policy grows with every cluster                                                                                                |
-| **EKS Pod Identity**                  | A role per app, with access to only its own resources, linked to the app's pod | **Chosen**                                                                                                                                                                                          |
+On Azure, a recipe returns a key, such as a storage account key, and the app uses it. Amazon S3 and Amazon Bedrock accept only IAM credentials, which a recipe can't hand back as a key today. We'll use **EKS Pod Identity**: a role per app, with access to only its own resources, linked to the app's pod. The other options are under [Alternatives considered](#other-alternatives).
 
 Pod Identity stores no secret. The app's AWS SDK gets short-lived credentials automatically, so most apps need no code change. It's AWS's recommended way for pods to reach AWS services, and it matches the passwordless model the canvas already uses for deploys. It brings three new requirements:
 
@@ -493,6 +462,11 @@ One role per environment avoids the lock and the shared limits. But every new en
 - **Keeping the AWS recipes in ai-extensions and publishing them to each user's registry at deploy:** this needs a registry secret copied into the control plane, and a hard-coded recipe list for the planned graph. One versioned pack in `resource-types-contrib` works like the Azure pack.
 - **Letting the developer choose another VPC:** each recipe would need its own security group in that VPC, which Radius can't redeploy yet, plus peering or a transit gateway that Radius doesn't create.
 - **Blocking a deploy that uses a type the pack doesn't have:** it would also block types the repository's own custom recipes supply, and a deploy that fails on that resource is safe.
+- **Long-lived access keys for app credentials:** the recipe would create an IAM user and return its key. The key never expires, copies end up in recipe state, a Kubernetes secret, and the app, and the deploy identity would need rights to create IAM users, which lets it create an admin.
+- **Generic credential fields on the Radius types, such as `accessKeyId`:** still needs long-lived keys, and changing the types affects Azure apps.
+- **The cluster's node role for app credentials:** every pod on those nodes gets the same access, and it changes the user's cluster.
+- **Separate Radius types per cloud:** the same app definition could no longer deploy to both clouds.
+- **IAM roles for service accounts (IRSA):** works, but needs an OIDC provider per cluster, and each role's trust policy grows with every cluster.
 - **Shipping S3 and Bedrock recipes before pod identity:** apps would deploy and then fail to connect, with nothing explaining why.
 - **Waiting for pod identity before shipping AWS:** it would hold back the other catalog types by the weeks pod identity takes.
 - **Kafka on the cluster for the first release:** no Kubernetes Kafka recipe exists for any cloud, so it's new work, and MSK is the AWS answer once Radius can read its broker addresses.
